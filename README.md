@@ -9,7 +9,11 @@ The extension shows tools at startup and with `/tools`, separated into `[Disable
 ## Install
 
 ```bash
-pi install git:github.com/marcoscale98/pi-loaded-tools
+git clone https://github.com/marcoscale98/pi-loaded-tools.git
+cd pi-loaded-tools
+bun install --frozen-lockfile --ignore-scripts
+bunx tsc --project tsconfig.build.json
+pi install .
 ```
 
 > [!NOTE]
