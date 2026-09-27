@@ -78,65 +78,50 @@ function buildStatsLine(tools: LoadedTool[]): string {
 /**
  * Format a loaded-tools list using Pi's native boot-time visual style.
  *
- * When `compact` is true, shows a single line listing tool names
- * (matching Pi's default boot layout for skills/extensions). When false
- * (the default / expanded), shows the full listing with scope groups,
- * active indicators, and a stats summary line.
- *
- * Compact output:
- * ```
- * [Tools]
- *   bash, read, write, edit
- * ```
- *
- * Expanded output:
- * ```
- * [Tools]
- *   builtin
- *     ● bash
- *     ● read
- *   project
- *     ● my_local_tool
- *   user
- *     npm:@scope/package
- *       ● ext_tool
- *   14 tools · 13 active · 1 from extensions
- * ```
+ * Compact mode lists names under disabled and enabled headings. Expanded
+ * mode retains scope and package grouping within each heading, followed by
+ * the overall stats line.
  */
 export function formatToolsList(tools: LoadedTool[], theme: Theme, compact = false): string {
-  if (compact) {
-    const names = tools.map((t) => t.name).sort((a, b) => a.localeCompare(b));
-    const body =
-      names.length > 0 ? theme.fg("dim", "  " + names.join(", ")) : theme.fg("dim", "  (none)");
-    return theme.fg("mdHeading", "\x1b[1m[Tools]\x1b[22m") + "\n" + body;
-  }
-
-  const stats = buildStatsLine(tools);
   const lines: string[] = [];
-  lines.push(theme.fg("mdHeading", "[Tools]"));
 
-  const groups = buildToolGroups(tools);
+  for (const [label, active] of [
+    ["Disabled Tools", false],
+    ["Enabled Tools", true],
+  ] as const) {
+    const sectionTools = tools.filter((tool) => tool.active === active);
+    lines.push(theme.fg("mdHeading", compact ? `\x1b[1m[${label}]\x1b[22m` : `[${label}]`));
 
-  for (const group of groups) {
-    lines.push(`  ${theme.fg("accent", group.scope)}`);
-
-    const sorted = [...group.localTools].sort((a, b) => a.name.localeCompare(b.name));
-    for (const tool of sorted) {
-      lines.push(theme.fg("dim", `    ${tool.active ? "●" : "○"} ${tool.name}`));
+    if (compact) {
+      const names = sectionTools.map((tool) => tool.name).sort((a, b) => a.localeCompare(b));
+      lines.push(theme.fg("dim", `  ${names.length ? names.join(", ") : "(none)"}`));
+      if (!active) lines.push("");
+      continue;
     }
 
-    const sortedPkgs = Array.from(group.packages.entries()).sort(([a], [b]) => a.localeCompare(b));
-    for (const [source, pkgTools] of sortedPkgs) {
-      lines.push(`    ${theme.fg("mdLink", source)}`);
-      const sortedPkgTools = [...pkgTools].sort((a, b) => a.name.localeCompare(b.name));
-      for (const tool of sortedPkgTools) {
-        lines.push(theme.fg("dim", `      ${tool.active ? "●" : "○"} ${tool.name}`));
+    for (const group of buildToolGroups(sectionTools)) {
+      lines.push(`  ${theme.fg("accent", group.scope)}`);
+
+      const sorted = [...group.localTools].sort((a, b) => a.name.localeCompare(b.name));
+      for (const tool of sorted) {
+        lines.push(theme.fg("dim", `    ${tool.active ? "●" : "○"} ${tool.name}`));
+      }
+
+      const sortedPkgs = Array.from(group.packages.entries()).sort(([a], [b]) =>
+        a.localeCompare(b)
+      );
+      for (const [source, pkgTools] of sortedPkgs) {
+        lines.push(`    ${theme.fg("mdLink", source)}`);
+        const sortedPkgTools = [...pkgTools].sort((a, b) => a.name.localeCompare(b.name));
+        for (const tool of sortedPkgTools) {
+          lines.push(theme.fg("dim", `      ${tool.active ? "●" : "○"} ${tool.name}`));
+        }
       }
     }
+    if (!active) lines.push("");
   }
 
-  lines.push(theme.fg("dim", `  ${stats}`));
-
+  if (!compact) lines.push(theme.fg("dim", `  ${buildStatsLine(tools)}`));
   return lines.join("\n");
 }
 

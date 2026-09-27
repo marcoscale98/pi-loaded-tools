@@ -4,26 +4,12 @@
 
 [Pi coding agent](https://pi.dev) extension to list session's loaded tools.
 
-Pi currently doesn't show this important information at startup nor elsewhere, installing this extension will show tools list at startup:
-
-![screenshot-collapsed](./screenshot-collapsed.png)
-
-`Ctrl+O` to expand to show active/inactive status and source labels (printable on demand with the `/tools` registered command):
-
-![screenshot-expanded](./screenshot-expanded.png)
+The extension shows tools at startup and with `/tools`, separated into `[Disabled Tools]` and `[Enabled Tools]`. Press `Ctrl+O` to expand the list with source labels and scope grouping.
 
 ## Install
 
-### From npm
-
 ```bash
-pi install npm:@alexanderfortin/pi-loaded-tools
-```
-
-### From github
-
-```bash
-pi install git:github.com/shaftoe/pi-loaded-tools
+pi install git:github.com/marcoscale98/pi-loaded-tools
 ```
 
 > [!NOTE]

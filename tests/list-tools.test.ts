@@ -431,7 +431,44 @@ describe("formatToolsList", () => {
       new Set(["bash"])
     );
     const output = formatToolsList(tools, theme);
-    expect(output).toContain("⟨mdHeading⟩[Tools]⟨/⟩");
+    expect(output).toContain("⟨mdHeading⟩[Disabled Tools]⟨/⟩");
+    expect(output).toContain("⟨mdHeading⟩[Enabled Tools]⟨/⟩");
+  });
+
+  test("separates disabled and enabled tools without empty scope groups", () => {
+    const tools = getAllLoadedTools(
+      [
+        makeTool({ name: "disabled_builtin", source: "builtin", path: "<builtin:disabled>" }),
+        makeTool({ name: "enabled_builtin", source: "builtin", path: "<builtin:enabled>" }),
+        makeTool({
+          name: "disabled_pkg",
+          source: "npm:@s/p",
+          scope: "user",
+          origin: "package",
+          path: "npm:@s/p/dist/index.js",
+        }),
+        makeTool({
+          name: "enabled_pkg",
+          source: "npm:@s/p",
+          scope: "user",
+          origin: "package",
+          path: "npm:@s/p/dist/index.js",
+        }),
+      ],
+      new Set(["enabled_builtin", "enabled_pkg"])
+    );
+    const output = formatToolsList(tools, theme);
+    const [disabled, enabled] = output.split("⟨mdHeading⟩[Enabled Tools]⟨/⟩");
+    expect(disabled).toContain("○ disabled_builtin");
+    expect(disabled).toContain("○ disabled_pkg");
+    expect(disabled).not.toContain("enabled_builtin");
+    expect(disabled).not.toContain("enabled_pkg");
+    expect(enabled).toContain("● enabled_builtin");
+    expect(enabled).toContain("● enabled_pkg");
+    expect(enabled).not.toContain("disabled_builtin");
+    expect(enabled).not.toContain("disabled_pkg");
+    expect(disabled).toContain("⟨accent⟩builtin⟨/⟩");
+    expect(enabled).toContain("⟨accent⟩builtin⟨/⟩");
   });
 
   test("groups builtin tools under 'builtin' scope with accent label", () => {
@@ -544,7 +581,8 @@ describe("formatToolsList", () => {
 
   test("handles empty tools list", () => {
     const output = formatToolsList([], theme);
-    expect(output).toContain("⟨mdHeading⟩[Tools]⟨/⟩");
+    expect(output).toContain("⟨mdHeading⟩[Disabled Tools]⟨/⟩");
+    expect(output).toContain("⟨mdHeading⟩[Enabled Tools]⟨/⟩");
     expect(output).toContain("0 tools · 0 active");
   });
 
@@ -768,7 +806,7 @@ describe("formatToolsList compact mode", () => {
     bold: (text: string) => `*${text}*`,
   } as unknown as Theme;
 
-  test("compact mode shows single line listing tool names with bold header", () => {
+  test("compact mode separates disabled and enabled names", () => {
     const tools = getAllLoadedTools(
       [
         makeTool({ name: "bash", source: "builtin", path: "<builtin:bash>" }),
@@ -777,9 +815,11 @@ describe("formatToolsList compact mode", () => {
       new Set(["bash"])
     );
     const output = formatToolsList(tools, theme, true);
-    expect(output).toContain("\x1b[1m[Tools]\x1b[22m");
-    expect(output).toContain("⟨dim⟩  bash, read⟨/⟩");
-    expect(output).toContain("\n");
+    expect(output).toContain("\x1b[1m[Disabled Tools]\x1b[22m");
+    expect(output).toContain("\x1b[1m[Enabled Tools]\x1b[22m");
+    expect(output).toContain("⟨dim⟩  read⟨/⟩");
+    expect(output).toContain("⟨dim⟩  bash⟨/⟩");
+    expect(output).not.toContain("bash, read");
   });
 
   test("compact mode lists tool names sorted alphabetically", () => {
@@ -816,7 +856,8 @@ describe("formatToolsList compact mode", () => {
 
   test("compact mode handles empty tools", () => {
     const output = formatToolsList([], theme, true);
-    expect(output).toContain("\x1b[1m[Tools]\x1b[22m");
+    expect(output).toContain("\x1b[1m[Disabled Tools]\x1b[22m");
+    expect(output).toContain("\x1b[1m[Enabled Tools]\x1b[22m");
     expect(output).toContain("(none)");
   });
 
@@ -826,7 +867,7 @@ describe("formatToolsList compact mode", () => {
       new Set(["bash"])
     );
     const output = formatToolsList(tools, theme, false);
-    expect(output).toContain("⟨mdHeading⟩[Tools]⟨/⟩");
+    expect(output).toContain("⟨mdHeading⟩[Enabled Tools]⟨/⟩");
     expect(output).toContain("⟨accent⟩builtin⟨/⟩");
     expect(output).toContain("● bash");
     expect(output).toContain("⟨dim⟩  1 tool · 1 active⟨/⟩");
@@ -859,7 +900,8 @@ describe("message renderer", () => {
 
     const result = renderer({}, { expanded: true }, theme);
     expect(result).toBeDefined();
-    expect(result.text).toContain("[Tools]");
+    expect(result.text).toContain("[Disabled Tools]");
+    expect(result.text).toContain("[Enabled Tools]");
     expect(result.text).toContain("0 tools");
   });
 
@@ -910,8 +952,9 @@ describe("message renderer", () => {
 
     const result = renderer({ details: { tools } }, { expanded: false }, theme);
     expect(result).toBeDefined();
-    expect(result.text).toContain("\x1b[1m[Tools]\x1b[22m");
-    expect(result.text).toContain("bash, read");
+    expect(result.text).toContain("\x1b[1m[Disabled Tools]\x1b[22m");
+    expect(result.text).toContain("\x1b[1m[Enabled Tools]\x1b[22m");
+    expect(result.text).not.toContain("bash, read");
     expect(result.text).not.toContain("● bash");
   });
 });
