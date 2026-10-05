@@ -20,7 +20,7 @@
   "license": "MIT",
   "pi": {
     "extensions": [
-      "./dist/index.js"
+      "./src/index.ts"
     ]
   },
   "publishConfig": {
@@ -28,6 +28,7 @@
   },
   "files": [
     "dist",
+    "src",
     "package.json",
     "README.md",
     "CHANGELOG.md",

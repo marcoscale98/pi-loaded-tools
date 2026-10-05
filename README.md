@@ -6,15 +6,13 @@
 
 The extension shows tools at startup and with `/tools`, separated into `[Disabled Tools]` and `[Enabled Tools]`. Press `Ctrl+O` to expand the list with source labels and scope grouping.
 
-## Install
+## Installazione
 
 ```bash
-git clone https://github.com/marcoscale98/pi-loaded-tools.git
-cd pi-loaded-tools
-bun install --frozen-lockfile --ignore-scripts
-bunx tsc --project tsconfig.build.json
-pi install .
+pi install git:github.com/marcoscale98/pi-loaded-tools
 ```
+
+Pi carica direttamente i sorgenti TypeScript: non servono un clone locale o una compilazione manuale.
 
 > [!NOTE]
 > You might want to update `~/.pi/agent/settings.json` to ensure `pi-loaded-tools` is loaded last so to be able to show all available tools registered by other extensions too
