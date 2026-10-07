@@ -126,18 +126,12 @@ export function formatToolsList(tools: LoadedTool[], theme: Theme, compact = fal
 }
 
 /**
- * Show loaded tools as a persistent chat message.
+ * Show loaded tools as a persistent UI entry excluded from model context.
  *
- * Uses `pi.sendMessage()` so the tools list appears inline in the chat
- * (same visual position as Pi's native `[Skills]`, `[Extensions]`, etc.)
- * and survives theme changes via the registered message renderer.
+ * The registered entry renderer keeps the list inline in the chat and
+ * supports theme changes and compact/expanded views.
  */
 export function showTools(pi: ExtensionAPI, _ctx: ExtensionContext): void {
   const tools = getAllLoadedTools(pi.getAllTools(), new Set(pi.getActiveTools()));
-  pi.sendMessage({
-    customType: "pi-loaded-tools",
-    content: `${tools.length} tools (${tools.filter((t) => t.active).length} active)`,
-    display: true,
-    details: { tools },
-  });
+  pi.appendEntry("pi-loaded-tools", { tools });
 }

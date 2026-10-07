@@ -8,7 +8,13 @@
  *   - src/index.ts        (extension entry point)
  */
 
-import type { Theme, ToolInfo } from "@earendil-works/pi-coding-agent";
+import {
+  prepareBranchEntries,
+  sessionEntryToContextMessages,
+  SessionManager,
+  type Theme,
+  type ToolInfo,
+} from "@earendil-works/pi-coding-agent";
 import { describe, expect, mock, test } from "bun:test";
 import {
   formatToolSource,
@@ -50,23 +56,18 @@ function makeTool(
 
 /** Create a minimal mock pi object. */
 function mockPi(tools: ToolInfo[] = [], active: string[] = []) {
-  const messages: Array<{
-    customType: string;
-    content: string;
-    display: boolean;
-    details: unknown;
-  }> = [];
+  const entries: Array<{ customType: string; data: unknown }> = [];
   return {
     getAllTools: mock(() => tools),
     getActiveTools: mock(() => active),
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    sendMessage: mock((msg: any) => {
-      messages.push(msg);
+    sendMessage: mock(() => {}),
+    appendEntry: mock((customType: string, data: unknown) => {
+      entries.push({ customType, data });
     }),
     registerCommand: mock(() => {}),
-    registerMessageRenderer: mock(() => {}),
+    registerEntryRenderer: mock(() => {}),
     on: mock(() => {}),
-    _messages: messages,
+    _entries: entries,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any;
 }
@@ -601,28 +602,22 @@ describe("formatToolsList", () => {
 // ---------------------------------------------------------------------------
 
 describe("showTools", () => {
-  test("sends message via pi.sendMessage with correct customType and display", () => {
-    const tools = [
-      makeTool({
-        name: "bash",
-        source: "builtin",
-        path: "<builtin:bash>",
-      }),
-    ];
-    const pi = mockPi(tools, ["bash"]);
-    const ctx = mockCtx();
+  test("persists a UI entry without sending a model-facing message", () => {
+    const pi = mockPi([makeTool({ name: "bash" }), makeTool({ name: "read" })], ["bash"]);
 
-    showTools(pi, ctx);
+    showTools(pi, mockCtx());
 
-    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
-    const msg = pi._messages[0]!;
-    expect(msg.customType).toBe("pi-loaded-tools");
-    expect(msg.display).toBe(true);
-    expect(msg.content).toContain("1 tool");
-    expect(msg.content).toContain("1 active");
+    expect(pi.sendMessage).not.toHaveBeenCalled();
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    expect(pi._entries[0]!.customType).toBe("pi-loaded-tools");
+    const data = pi._entries[0]!.data as { tools: Array<{ name: string; active: boolean }> };
+    expect(data.tools.map(({ name, active }) => ({ name, active }))).toEqual([
+      { name: "bash", active: true },
+      { name: "read", active: false },
+    ]);
   });
 
-  test("stores loaded tools in details", () => {
+  test("stores loaded tools in entry data", () => {
     const tools = [
       makeTool({
         name: "bash",
@@ -642,7 +637,7 @@ describe("showTools", () => {
 
     showTools(pi, ctx);
 
-    const details = pi._messages[0]!.details as { tools: Array<{ name: string }> };
+    const details = pi._entries[0]!.data as { tools: Array<{ name: string }> };
     expect(details.tools).toHaveLength(2);
     expect(details.tools.map((t) => t.name)).toEqual(["bash", "web_search"]);
   });
@@ -668,9 +663,9 @@ describe("showTools", () => {
 
     showTools(pi, ctx);
 
-    const msg = pi._messages[0]!;
-    expect(msg.content).toContain("3 tools");
-    expect(msg.content).toContain("2 active");
+    const data = pi._entries[0]!.data as { tools: Array<{ active: boolean }> };
+    expect(data.tools).toHaveLength(3);
+    expect(data.tools.filter((tool) => tool.active)).toHaveLength(2);
   });
 });
 
@@ -884,134 +879,100 @@ describe("formatToolsList compact mode", () => {
   });
 });
 
-describe("message renderer", () => {
-  test("renderer callback falls back to empty array when details is missing", async () => {
+describe("entry renderer", () => {
+  test("renders persisted tools in compact and expanded views", async () => {
     const mod = await import("../src/index.js");
-    const pi = mockPi();
-
+    const pi = mockPi([makeTool({ name: "bash" }), makeTool({ name: "read" })], ["bash"]);
     mod.default(pi);
+    showTools(pi, mockCtx());
 
-    const renderer = pi.registerMessageRenderer.mock.calls[0]![1];
-    const theme = {
-      fg: (_color: string, text: string) => `⟨${_color}⟩${text}⟨/⟩`,
-      bg: (_color: string, text: string) => text,
-      bold: (text: string) => `*${text}*`,
-    } as unknown as Theme;
+    const renderer = pi.registerEntryRenderer.mock.calls[0]![1];
+    const theme = mockCtx().ui.theme;
+    const entry = pi._entries[0]!;
+    const expanded = renderer(entry, { expanded: true }, theme);
+    expect(expanded.text).toContain("[Disabled Tools]");
+    expect(expanded.text).toContain("[Enabled Tools]");
+    expect(expanded.text).toContain("● bash");
+    expect(expanded.text).toContain("○ read");
+    expect(expanded.text).toContain("2 tools · 1 active");
 
-    const result = renderer({}, { expanded: true }, theme);
-    expect(result).toBeDefined();
-    expect(result.text).toContain("[Disabled Tools]");
-    expect(result.text).toContain("[Enabled Tools]");
-    expect(result.text).toContain("0 tools");
-  });
+    const compact = renderer(entry, { expanded: false }, theme);
+    expect(compact.text).toContain("\x1b[1m[Disabled Tools]\x1b[22m");
+    expect(compact.text).toContain("\x1b[1m[Enabled Tools]\x1b[22m");
+    expect(compact.text).not.toContain("● bash");
+    expect(compact.text).not.toContain("bash, read");
 
-  test("renderer callback uses tools from message.details (expanded)", async () => {
-    const mod = await import("../src/index.js");
-    const pi = mockPi();
-
-    mod.default(pi);
-
-    const tools = getAllLoadedTools(
-      [makeTool({ name: "bash", source: "builtin", path: "<builtin:bash>" })],
-      new Set(["bash"])
-    );
-
-    const renderer = pi.registerMessageRenderer.mock.calls[0]![1];
-    const theme = {
-      fg: (_color: string, text: string) => `⟨${_color}⟩${text}⟨/⟩`,
-      bg: (_color: string, text: string) => text,
-      bold: (text: string) => `*${text}*`,
-    } as unknown as Theme;
-
-    const result = renderer({ details: { tools } }, { expanded: true }, theme);
-    expect(result).toBeDefined();
-    expect(result.text).toContain("1 tool");
-    expect(result.text).toContain("● bash");
-  });
-
-  test("renderer shows compact mode when not expanded", async () => {
-    const mod = await import("../src/index.js");
-    const pi = mockPi();
-
-    mod.default(pi);
-
-    const tools = getAllLoadedTools(
-      [
-        makeTool({ name: "bash", source: "builtin", path: "<builtin:bash>" }),
-        makeTool({ name: "read", source: "builtin", path: "<builtin:read>" }),
-      ],
-      new Set(["bash"])
-    );
-
-    const renderer = pi.registerMessageRenderer.mock.calls[0]![1];
-    const theme = {
-      fg: (_color: string, text: string) => `⟨${_color}⟩${text}⟨/⟩`,
-      bg: (_color: string, text: string) => text,
-      bold: (text: string) => `*${text}*`,
-    } as unknown as Theme;
-
-    const result = renderer({ details: { tools } }, { expanded: false }, theme);
-    expect(result).toBeDefined();
-    expect(result.text).toContain("\x1b[1m[Disabled Tools]\x1b[22m");
-    expect(result.text).toContain("\x1b[1m[Enabled Tools]\x1b[22m");
-    expect(result.text).not.toContain("bash, read");
-    expect(result.text).not.toContain("● bash");
+    const empty = renderer({}, { expanded: true }, theme);
+    expect(empty.text).toContain("0 tools");
   });
 });
 
 describe("extension entry point", () => {
-  test("registers /tools command, session_start listener, and message renderer", async () => {
+  test("registers /tools, startup listener, and UI-only entry renderer", async () => {
     const mod = await import("../src/index.js");
     const pi = mockPi();
-
     mod.default(pi);
 
     expect(pi.registerCommand).toHaveBeenCalledTimes(1);
     expect(pi.registerCommand.mock.calls[0]![0]).toBe("tools");
-
     expect(pi.on).toHaveBeenCalledTimes(1);
     expect(pi.on.mock.calls[0]![0]).toBe("session_start");
-
-    expect(pi.registerMessageRenderer).toHaveBeenCalledTimes(1);
-    expect(pi.registerMessageRenderer.mock.calls[0]![0]).toBe("pi-loaded-tools");
+    expect(pi.registerEntryRenderer).toHaveBeenCalledTimes(1);
+    expect(pi.registerEntryRenderer.mock.calls[0]![0]).toBe("pi-loaded-tools");
   });
 
-  test("command handler calls showTools", async () => {
+  test("/tools creates only a UI entry", async () => {
     const mod = await import("../src/index.js");
     const pi = mockPi();
-    const ctx = mockCtx();
-
     mod.default(pi);
 
     const handler = pi.registerCommand.mock.calls[0]![1]!.handler;
-    await handler("", ctx);
+    await handler("", mockCtx());
 
-    expect(pi.sendMessage).toHaveBeenCalled();
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
+    expect(pi.sendMessage).not.toHaveBeenCalled();
   });
 
-  test("session_start handler calls showTools only on startup reason", async () => {
+  test("startup creates only a UI entry and other session reasons do not", async () => {
     const mod = await import("../src/index.js");
     const pi = mockPi();
+    mod.default(pi);
+    const sessionHandler = pi.on.mock.calls[0]![1];
     const ctx = mockCtx();
 
-    mod.default(pi);
-
-    const sessionHandler = pi.on.mock.calls[0]![1];
-
-    // session_start with reason "startup" — should show tools
     await sessionHandler({ reason: "startup" }, ctx);
-    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
-
-    // session_start with reason "new" (/new) — should NOT show tools
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
     await sessionHandler({ reason: "new" }, ctx);
-    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
-
-    // session_start with reason "resume" — should NOT show tools
     await sessionHandler({ reason: "resume" }, ctx);
-    expect(pi.sendMessage).toHaveBeenCalledTimes(1);
-
-    // Another startup should still show tools (no stale flag)
+    expect(pi.appendEntry).toHaveBeenCalledTimes(1);
     await sessionHandler({ reason: "startup" }, ctx);
-    expect(pi.sendMessage).toHaveBeenCalledTimes(2);
+    expect(pi.appendEntry).toHaveBeenCalledTimes(2);
+    expect(pi.sendMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("model context exclusion", () => {
+  test("tools entries remain in history but not context or summary input", () => {
+    const session = SessionManager.inMemory();
+    session.appendMessage({ role: "user", content: "Hello", timestamp: Date.now() });
+    const pi = mockPi([makeTool({ name: "bash" }), makeTool({ name: "read" })], ["bash"]);
+    pi.appendEntry = (customType: string, data: unknown) =>
+      session.appendCustomEntry(customType, data);
+
+    showTools(pi, mockCtx());
+    showTools(pi, mockCtx());
+
+    const entries = session.getBranch();
+    const toolEntries = entries.filter((entry) => entry.type === "custom");
+    expect(toolEntries).toHaveLength(2);
+    for (const entry of toolEntries) {
+      expect(sessionEntryToContextMessages(entry)).toEqual([]);
+    }
+    expect(session.buildSessionContext().messages).toHaveLength(1);
+    expect(session.buildSessionContext().messages[0]).toMatchObject({
+      role: "user",
+      content: "Hello",
+    });
+    expect(prepareBranchEntries(entries).messages).toEqual(session.buildSessionContext().messages);
   });
 });

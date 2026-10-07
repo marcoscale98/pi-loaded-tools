@@ -6,7 +6,7 @@
  *
  * The tools list is rendered using Pi's native boot-time visual style
  * ([SectionName] headers, scope grouping, accent/dim/mdLink theme tokens)
- * via a custom message renderer, so it blends in with [Skills], [Extensions],
+ * via a custom entry renderer, so it blends in with [Skills], [Extensions],
  * [Themes], etc.
  *
  * Supports Pi's compact/expanded boot layout: the tools list starts collapsed
@@ -19,14 +19,10 @@ import { Text } from "@earendil-works/pi-tui";
 import { formatToolsList, showTools, type LoadedTool } from "./tools";
 
 export default function (pi: ExtensionAPI): void {
-  pi.registerMessageRenderer<{ tools: LoadedTool[] }>(
+  pi.registerEntryRenderer<{ tools: LoadedTool[] }>(
     "pi-loaded-tools",
-    (
-      message: { details?: { tools: LoadedTool[] } },
-      options: { expanded: boolean },
-      theme: Theme
-    ) => {
-      const tools: LoadedTool[] = message.details?.tools ?? [];
+    (entry: { data?: { tools: LoadedTool[] } }, options: { expanded: boolean }, theme: Theme) => {
+      const tools: LoadedTool[] = entry.data?.tools ?? [];
       const compact = !options?.expanded;
       return new Text(formatToolsList(tools, theme, compact), 0, 0);
     }
